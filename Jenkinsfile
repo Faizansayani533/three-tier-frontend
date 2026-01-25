@@ -155,7 +155,7 @@ stage('OWASP ZAP DAST Scan') {
     }
   
    always {
-    archiveArtifacts artifacts: 'zap-report/*', fingerprint: true
+    archiveArtifacts artifacts: 'zap-report/*', fingerprint: true, allowEmptyArchive: true
 	}  
    }
 }
