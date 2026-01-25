@@ -66,19 +66,20 @@ pipeline {
     // ---------------------------
     // BUILD & PUSH IMAGE
     // ---------------------------
-    stage('Build & Push Image (Kaniko)') {
-      steps {
-        container('kaniko') {
-          sh '''
-            /kaniko/executor \
-              --context . \
-              --dockerfile Dockerfile \
-              --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
-              --destination $ECR_REGISTRY/$IMAGE_NAME:latest
-          '''
-        }
-      }
+stage('Build & Push Image (Kaniko)') {
+  steps {
+    container('kaniko') {
+      sh '''
+      /kaniko/executor \
+        --context /home/jenkins/agent/workspace/three-tier-frontend \
+        --dockerfile /home/jenkins/agent/workspace/three-tier-frontend/Dockerfile \
+        --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+        --destination $ECR_REGISTRY/$IMAGE_NAME:latest \
+        --verbosity=info
+      '''
     }
+  }
+}
 
     // ---------------------------
     // TRIVY IMAGE SCAN
