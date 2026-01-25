@@ -145,8 +145,9 @@ stage('OWASP ZAP DAST Scan') {
     failure {
       echo "❌ FRONTEND PIPELINE FAILED"
     }
-  }
+  
    always {
     archiveArtifacts artifacts: 'zap-report/*', fingerprint: true
-  }
+	}  
+   }
 }
