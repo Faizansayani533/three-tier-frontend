@@ -66,20 +66,19 @@ pipeline {
     // ---------------------------
     // BUILD & PUSH IMAGE
     // ---------------------------
-stage('Build & Push Image (Kaniko)') {
-  steps {
-    container('node') {
-      sh '''
-      /kaniko/executor \
-        --context /home/jenkins/agent/workspace/three-tier-frontend \
-        --dockerfile /home/jenkins/agent/workspace/three-tier-frontend/Dockerfile \
-        --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
-        --destination $ECR_REGISTRY/$IMAGE_NAME:latest \
-        --verbosity=info
-      '''
+    stage('Build & Push Image (Kaniko)') {
+      steps {
+        container('kaniko') {
+          sh '''
+            /kaniko/executor \
+              --context . \
+              --dockerfile Dockerfile \
+              --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+              --destination $ECR_REGISTRY/$IMAGE_NAME:latest
+          '''
+        }
+      }
     }
-  }
-}
 
     // ---------------------------
     // TRIVY IMAGE SCAN
@@ -122,32 +121,7 @@ stage('Build & Push Image (Kaniko)') {
         }
       }
     }
-  
-
-// ---------------------------
-// OWASP ZAP DAST SCAN
-// ---------------------------
-// ---------------------------
-// OWASP ZAP DAST SCAN
-// ---------------------------
-stage('OWASP ZAP DAST Scan') {
-  steps {
-    container('zap') {
-      sh '''
-        echo "🕷️ Running OWASP ZAP Baseline Scan..."
-
-        zap-baseline.py \
-          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-          -r zap-report.html \
-          -I
-
-        ls -l /zap/wrk
-      '''
-    }
   }
-}
-
-}
 
   post {
     success {
@@ -157,9 +131,5 @@ stage('OWASP ZAP DAST Scan') {
     failure {
       echo "❌ FRONTEND PIPELINE FAILED"
     }
-  
-   always {
-    archiveArtifacts artifacts: '**/zap-report.html', fingerprint: true, allowEmptyArchive: true
-	}  
-   }
+  }
 }
