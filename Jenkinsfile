@@ -126,6 +126,9 @@ pipeline {
 // ---------------------------
 // OWASP ZAP DAST SCAN
 // ---------------------------
+// ---------------------------
+// OWASP ZAP DAST SCAN
+// ---------------------------
 stage('OWASP ZAP DAST Scan') {
   steps {
     container('zap') {
@@ -135,14 +138,14 @@ stage('OWASP ZAP DAST Scan') {
 
         zap-baseline.py \
           -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-          -r zap-report/zap-report.html || true
+          -r /home/jenkins/agent/workspace/three-tier-frontend/zap-report/zap-report.html \
+          -I
 
         ls -l zap-report
       '''
     }
   }
 }
-
 }
 
   post {
