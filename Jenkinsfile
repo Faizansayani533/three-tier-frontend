@@ -123,19 +123,26 @@ pipeline {
     }
   
 
+// ---------------------------
+// OWASP ZAP DAST SCAN
+// ---------------------------
 stage('OWASP ZAP DAST Scan') {
   steps {
-    sh '''
-      mkdir -p zap-report
+    container('zap') {
+      sh '''
+        echo "🕷️ Running OWASP ZAP Baseline Scan..."
+        mkdir -p zap-report
 
-      docker run --rm -t \
-        -v $(pwd)/zap-report:/zap/wrk \
-        zaproxy/zap-stable zap-baseline.py \
-        -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-        -r zap-report.html || true
-    '''
+        zap-baseline.py \
+          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+          -r zap-report/zap-report.html || true
+
+        ls -l zap-report
+      '''
+    }
   }
 }
+
 }
 
   post {
