@@ -12,17 +12,21 @@ pipeline {
 
   stages {
 
-    stage('Checkout') {
+    stage('Checkout Source') {
       steps {
         checkout scm
       }
     }
 
+    // ---------------------------
+    // INSTALL & BUILD REACT
+    // ---------------------------
     stage('Install & Build React') {
       steps {
         container('node') {
           sh '''
-            cd web-tier
+            node -v
+            npm -v
             npm install
             npm run build
           '''
@@ -30,6 +34,9 @@ pipeline {
       }
     }
 
+    // ---------------------------
+    // SONARQUBE SCAN
+    // ---------------------------
     stage('SonarQube Scan') {
       steps {
         container('sonar-scanner') {
@@ -37,13 +44,17 @@ pipeline {
             sh '''
               sonar-scanner \
               -Dsonar.projectKey=three-tier-frontend \
-              -Dsonar.sources=web-tier/src
+              -Dsonar.projectName=three-tier-frontend \
+              -Dsonar.sources=src
             '''
           }
         }
       }
     }
 
+    // ---------------------------
+    // QUALITY GATE
+    // ---------------------------
     stage('Quality Gate') {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
@@ -52,7 +63,10 @@ pipeline {
       }
     }
 
-    stage('Build & Push Image') {
+    // ---------------------------
+    // BUILD & PUSH IMAGE
+    // ---------------------------
+    stage('Build & Push Image (Kaniko)') {
       steps {
         container('kaniko') {
           sh '''
@@ -66,17 +80,26 @@ pipeline {
       }
     }
 
+    // ---------------------------
+    // TRIVY IMAGE SCAN
+    // ---------------------------
     stage('Trivy Scan') {
       steps {
         container('trivy') {
           sh '''
-            trivy image --severity CRITICAL --exit-code 1 \
-            $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+            trivy image \
+              --severity CRITICAL \
+              --exit-code 1 \
+              --no-progress \
+              $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
           '''
         }
       }
     }
 
+    // ---------------------------
+    // UPDATE GITOPS REPO
+    // ---------------------------
     stage('Update GitOps Repo') {
       steps {
         withCredentials([string(credentialsId: 'gitops-token', variable: 'GIT_TOKEN')]) {
@@ -85,13 +108,14 @@ pipeline {
             git clone https://$GIT_TOKEN@github.com/Faizansayani533/three-tier-gitops.git gitops
 
             cd gitops/frontend
+
             sed -i "s|image: .*|image: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g" deployment.yaml
 
             git config user.email "jenkins@devsecops.com"
             git config user.name "jenkins"
 
             git add deployment.yaml
-            git commit -m "Frontend image updated to $IMAGE_TAG"
+            git commit -m "Update frontend image to $IMAGE_TAG"
             git push origin main
           '''
         }
@@ -101,15 +125,11 @@ pipeline {
 
   post {
     success {
-      echo "✅ Frontend CI passed — ArgoCD will deploy automatically"
+      echo "✅ FRONTEND PIPELINE PASSED — Argo CD will deploy UI"
     }
 
     failure {
-      echo "❌ Frontend pipeline failed — check logs"
-    }
-
-    always {
-      echo "📦 Pipeline finished"
+      echo "❌ FRONTEND PIPELINE FAILED"
     }
   }
 }
