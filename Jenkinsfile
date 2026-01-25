@@ -99,7 +99,17 @@ pipeline {
     }
   }
 
-  success {
-    echo "✅ Frontend CI passed — ArgoCD will deploy"
+  post {
+    success {
+      echo "✅ Frontend CI passed — ArgoCD will deploy automatically"
+    }
+
+    failure {
+      echo "❌ Frontend pipeline failed — check logs"
+    }
+
+    always {
+      echo "📦 Pipeline finished"
+    }
   }
 }
