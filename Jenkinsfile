@@ -68,7 +68,7 @@ pipeline {
     // ---------------------------
 stage('Build & Push Image (Kaniko)') {
   steps {
-    container('kaniko') {
+    container('node') {
       sh '''
       /kaniko/executor \
         --context /home/jenkins/agent/workspace/three-tier-frontend \
