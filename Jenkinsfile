@@ -123,6 +123,20 @@ pipeline {
     }
   }
 
+stage('OWASP ZAP DAST Scan') {
+  steps {
+    sh '''
+      mkdir -p zap-report
+
+      docker run --rm -t \
+        -v $(pwd)/zap-report:/zap/wrk \
+        zaproxy/zap-stable zap-baseline.py \
+        -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+        -r zap-report.html || true
+    '''
+  }
+}
+
   post {
     success {
       echo "✅ FRONTEND PIPELINE PASSED — Argo CD will deploy UI"
@@ -131,5 +145,8 @@ pipeline {
     failure {
       echo "❌ FRONTEND PIPELINE FAILED"
     }
+  }
+   always {
+    archiveArtifacts artifacts: 'zap-report/*', fingerprint: true
   }
 }
