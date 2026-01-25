@@ -134,18 +134,18 @@ stage('OWASP ZAP DAST Scan') {
     container('zap') {
       sh '''
         echo "🕷️ Running OWASP ZAP Baseline Scan..."
-        mkdir -p zap-report
 
         zap-baseline.py \
           -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-          -r /home/jenkins/agent/workspace/three-tier-frontend/zap-report/zap-report.html \
+          -r zap-report.html \
           -I
 
-        ls -l zap-report
+        ls -l /zap/wrk
       '''
     }
   }
 }
+
 }
 
   post {
@@ -158,7 +158,7 @@ stage('OWASP ZAP DAST Scan') {
     }
   
    always {
-    archiveArtifacts artifacts: 'zap-report/*', fingerprint: true, allowEmptyArchive: true
+    archiveArtifacts artifacts: '**/zap-report.html', fingerprint: true, allowEmptyArchive: true
 	}  
    }
 }
