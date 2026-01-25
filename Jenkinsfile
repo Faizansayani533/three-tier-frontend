@@ -121,7 +121,7 @@ pipeline {
         }
       }
     }
-  }
+  
 
 stage('OWASP ZAP DAST Scan') {
   steps {
@@ -135,6 +135,7 @@ stage('OWASP ZAP DAST Scan') {
         -r zap-report.html || true
     '''
   }
+}
 }
 
   post {
