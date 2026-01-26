@@ -145,7 +145,8 @@ stage('Trivy Scan') {
         echo "🔍 Running Trivy image scan..."
 
         trivy image \
-          --format html \
+          --format template \
+	  --template "@/contrib/html.tpl" \
           --output trivy-report.html \
           --severity CRITICAL,HIGH \
           --no-progress \
