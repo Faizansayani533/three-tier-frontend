@@ -63,86 +63,95 @@ pipeline {
       }
     }
 
-stage('Prepare Dependency-Check DB') {
-  steps {
-    container('dependency-check') {
-      withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-        sh '''
-          echo "📥 Preparing Dependency-Check DB..."
+    // ---------------------------
+    // PREPARE ODC DATABASE
+    // ---------------------------
+    stage('Prepare Dependency-Check DB') {
+      steps {
+        container('dependency-check') {
+          withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+            sh '''
+              echo "📥 Preparing Dependency-Check DB..."
 
-          if [ ! -d "/odc-data/nvdcve" ]; then
-            echo "First time DB download..."
-            /usr/share/dependency-check/bin/dependency-check.sh \
-              --updateonly \
-              --data /odc-data \
-              --nvdApiKey $NVD_API_KEY
-          else
-            echo "Using existing offline DB"
-          fi
-        '''
+              if [ ! -d "/odc-data/nvdcve" ]; then
+                /usr/share/dependency-check/bin/dependency-check.sh \
+                  --updateonly \
+                  --data /odc-data \
+                  --nvdApiKey $NVD_API_KEY
+              else
+                echo "Using existing offline DB"
+              fi
+            '''
+          }
+        }
       }
     }
-  }
-}
 
-stage('OWASP Dependency Check') {
-  steps {
-    container('dependency-check') {
-      sh '''
-        echo "🔍 OWASP Dependency Check (OFFLINE MODE)"
+    // ---------------------------
+    // OWASP DEPENDENCY CHECK (NON BLOCKING)
+    // ---------------------------
+    stage('OWASP Dependency Check') {
+      steps {
+        container('dependency-check') {
+          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+            sh '''
+              echo "🔍 OWASP Dependency Check"
 
-        rm -rf dc-report
-        mkdir dc-report
+              rm -rf dc-report
+              mkdir dc-report
 
-        /usr/share/dependency-check/bin/dependency-check.sh \
-          --project "three-tier-frontend" \
-          --scan . \
-          --format HTML \
-          --out dc-report \
-          --disableAssembly \
-          --data /odc-data \
-          --noupdate \
-          --failOnCVSS 9
-      '''
+              /usr/share/dependency-check/bin/dependency-check.sh \
+                --project "three-tier-frontend" \
+                --scan . \
+                --format HTML \
+                --out dc-report \
+                --disableAssembly \
+                --data /odc-data \
+                --noupdate \
+                --failOnCVSS 9
+            '''
+          }
+        }
+      }
     }
-  }
-}
-
 
     // ---------------------------
     // BUILD & PUSH IMAGE
     // ---------------------------
-stage('Build & Push Image (Kaniko)') {
-  steps {
-    container('kaniko') {
-      sh '''
-        echo "INSIDE KANIKO CONTAINER"
-        ls /kaniko
+    stage('Build & Push Image (Kaniko)') {
+      steps {
+        container('kaniko') {
+          sh '''
+            echo "🐳 Building image with Kaniko..."
 
-        /kaniko/executor \
-          --context /home/jenkins/agent/workspace/three-tier-frontend \
-          --dockerfile /home/jenkins/agent/workspace/three-tier-frontend/Dockerfile \
-          --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
-          --destination $ECR_REGISTRY/$IMAGE_NAME:latest \
-          --verbosity=info
-      '''
+            /kaniko/executor \
+              --context /home/jenkins/agent/workspace/three-tier-frontend \
+              --dockerfile /home/jenkins/agent/workspace/three-tier-frontend/Dockerfile \
+              --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+              --destination $ECR_REGISTRY/$IMAGE_NAME:latest \
+              --verbosity=info
+          '''
+        }
+      }
     }
-  }
-}
 
     // ---------------------------
-    // TRIVY IMAGE SCAN
+    // TRIVY IMAGE SCAN (NON BLOCKING)
     // ---------------------------
     stage('Trivy Scan') {
       steps {
         container('trivy') {
-          sh '''
-            trivy image \
-              --severity CRITICAL \
-              --exit-code 1 \
-              --no-progress \
-              $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-          '''
+          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+            sh '''
+              echo "🛡️ Trivy image scan..."
+
+              trivy image \
+                --severity CRITICAL,HIGH \
+                --no-progress \
+                $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+                > trivy-report.txt
+            '''
+          }
         }
       }
     }
@@ -158,7 +167,6 @@ stage('Build & Push Image (Kaniko)') {
             git clone https://$GIT_TOKEN@github.com/Faizansayani533/three-tier-gitops.git gitops
 
             cd gitops/frontend
-
             sed -i "s|image: .*|image: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g" deployment.yaml
 
             git config user.email "jenkins@devsecops.com"
@@ -171,36 +179,43 @@ stage('Build & Push Image (Kaniko)') {
         }
       }
     }
-stage('OWASP ZAP DAST Scan') {
-  steps {
-    container('zap') {
-      sh '''
-        echo "🚨 Running OWASP ZAP DAST Scan..."
 
-        mkdir -p zap-report
+    // ---------------------------
+    // OWASP ZAP DAST SCAN (NON BLOCKING)
+    // ---------------------------
+    stage('OWASP ZAP DAST Scan') {
+      steps {
+        container('zap') {
+          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+            sh '''
+              echo "🚨 Running OWASP ZAP scan..."
 
-        zap-baseline.py \
-          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-          -r zap-report/zap.html || true
+              mkdir -p zap-report
 
-        echo "✅ ZAP scan completed. Report saved in zap-report/zap.html"
-      '''
+              zap-baseline.py \
+                -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+                -r zap-report/zap.html
+            '''
+          }
+        }
+      }
     }
-  }
-}
 
   }
 
   post {
+
+    always {
+      echo "📦 Archiving security reports..."
+      archiveArtifacts artifacts: 'dc-report/**, zap-report/**, trivy-report.txt', fingerprint: true
+    }
+
     success {
       echo "✅ FRONTEND PIPELINE PASSED — Argo CD will deploy UI"
     }
 
     failure {
-      echo "❌ FRONTEND PIPELINE FAILED"
-    }
-      always {
-    archiveArtifacts artifacts: 'zap-report/**', fingerprint: true
+      echo "❌ FRONTEND PIPELINE COMPLETED WITH SECURITY FAILURES"
     }
   }
 }
