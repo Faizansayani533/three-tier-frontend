@@ -63,6 +63,52 @@ pipeline {
       }
     }
 
+stage('Prepare Dependency-Check DB') {
+  steps {
+    container('dependency-check') {
+      withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+        sh '''
+          echo "📥 Preparing Dependency-Check DB..."
+
+          if [ ! -d "/odc-data/nvdcve" ]; then
+            echo "First time DB download..."
+            /usr/share/dependency-check/bin/dependency-check.sh \
+              --updateonly \
+              --data /odc-data \
+              --nvdApiKey $NVD_API_KEY
+          else
+            echo "Using existing offline DB"
+          fi
+        '''
+      }
+    }
+  }
+}
+
+stage('OWASP Dependency Check') {
+  steps {
+    container('dependency-check') {
+      sh '''
+        echo "🔍 OWASP Dependency Check (OFFLINE MODE)"
+
+        rm -rf dc-report
+        mkdir dc-report
+
+        /usr/share/dependency-check/bin/dependency-check.sh \
+          --project "three-tier-frontend" \
+          --scan . \
+          --format HTML \
+          --out dc-report \
+          --disableAssembly \
+          --data /odc-data \
+          --noupdate \
+          --failOnCVSS 9
+      '''
+    }
+  }
+}
+
+
     // ---------------------------
     // BUILD & PUSH IMAGE
     // ---------------------------
@@ -125,6 +171,24 @@ stage('Build & Push Image (Kaniko)') {
         }
       }
     }
+stage('OWASP ZAP DAST Scan') {
+  steps {
+    container('zap') {
+      sh '''
+        echo "🚨 Running OWASP ZAP DAST Scan..."
+
+        mkdir -p zap-report
+
+        zap-baseline.py \
+          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+          -r zap-report/zap.html || true
+
+        echo "✅ ZAP scan completed. Report saved in zap-report/zap.html"
+      '''
+    }
+  }
+}
+
   }
 
   post {
@@ -134,6 +198,9 @@ stage('Build & Push Image (Kaniko)') {
 
     failure {
       echo "❌ FRONTEND PIPELINE FAILED"
+    }
+      always {
+    archiveArtifacts artifacts: 'zap-report/**', fingerprint: true
     }
   }
 }
