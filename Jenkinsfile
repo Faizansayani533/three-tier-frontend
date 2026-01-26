@@ -138,23 +138,22 @@ pipeline {
     // ---------------------------
     // TRIVY IMAGE SCAN (NON BLOCKING)
     // ---------------------------
-    stage('Trivy Scan') {
-      steps {
-        container('trivy') {
-          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-            sh '''
-              echo "🛡️ Trivy image scan..."
+stage('Trivy Scan') {
+  steps {
+    container('trivy') {
+      sh '''
+        echo "🔍 Running Trivy image scan..."
 
-              trivy image \
-                --severity CRITICAL,HIGH \
-                --no-progress \
-                $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
-                > trivy-report.txt
-            '''
-          }
-        }
-      }
+        trivy image \
+          --format html \
+          --output trivy-report.html \
+          --severity CRITICAL,HIGH \
+          --no-progress \
+          $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
+      '''
     }
+  }
+}
 
     // ---------------------------
     // UPDATE GITOPS REPO
@@ -183,31 +182,31 @@ pipeline {
     // ---------------------------
     // OWASP ZAP DAST SCAN (NON BLOCKING)
     // ---------------------------
-    stage('OWASP ZAP DAST Scan') {
-      steps {
-        container('zap') {
-          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-            sh '''
-              echo "🚨 Running OWASP ZAP scan..."
+stage('OWASP ZAP DAST Scan') {
+  steps {
+    container('zap') {
+      sh '''
+        echo "🚨 Running OWASP ZAP scan..."
 
-              mkdir -p zap-report
+        mkdir -p /zap/wrk
 
-              zap-baseline.py \
-                -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-                -r zap-report/zap.html
-            '''
-          }
-        }
-      }
+        zap-baseline.py \
+          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+          -r /zap/wrk/zap.html || true
+
+        cp /zap/wrk/zap.html zap.html
+      '''
     }
+  }
+}
 
   }
 
   post {
 
     always {
-      echo "📦 Archiving security reports..."
-      archiveArtifacts artifacts: 'dc-report/**, zap-report/**, trivy-report.txt', fingerprint: true
+	echo "📦 Archiving security reports..."
+    archiveArtifacts artifacts: 'zap.html, trivy-report.html, dc-report/**', fingerprint: true
     }
 
     success {
