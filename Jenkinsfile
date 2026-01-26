@@ -228,7 +228,7 @@ stage('OWASP ZAP DAST Scan') {
 
     always {
 	echo "📦 Archiving security reports..."
-    archiveArtifacts artifacts: 'zap.html, trivy-report.html, dc-report/**,gitleaks-report.*' fingerprint: true
+    archiveArtifacts artifacts: 'zap.html, trivy-report.html, dc-report/**,gitleaks-report.*', fingerprint: true
     }
 
     success {
