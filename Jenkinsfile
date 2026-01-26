@@ -17,6 +17,28 @@ pipeline {
         checkout scm
       }
     }
+    // ---------------------------
+// GITLEAKS SECRET SCAN
+// ---------------------------
+stage('GitLeaks Secret Scan') {
+  steps {
+    container('gitleaks') {
+      sh '''
+        echo "🔐 Running GitLeaks secret scan..."
+
+        gitleaks detect \
+          --source . \
+          --report-format html \
+          --report-path gitleaks-report.html \
+          --no-git \
+          || true
+
+        echo "✅ GitLeaks scan completed"
+      '''
+    }
+  }
+}
+
 
     // ---------------------------
     // INSTALL & BUILD REACT
