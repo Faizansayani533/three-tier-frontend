@@ -28,10 +28,9 @@ stage('GitLeaks Secret Scan') {
 
         gitleaks detect \
           --source . \
-          --report-format html \
-          --report-path gitleaks-report.html \
-          --no-git \
-          || true
+          --report-format json \
+          --report-path gitleaks-report.json \
+          --no-git || true
 
         echo "✅ GitLeaks scan completed"
       '''
