@@ -83,7 +83,7 @@ stage('OWASP Dependency Check') {
             /usr/share/dependency-check/bin/dependency-check.sh \
               --project "three-tier-frontend" \
               --scan . \
-              --format HTML \
+              --format XML \
               --out dc-report \
               --disableAssembly \
               --data /odc-data \
@@ -115,36 +115,52 @@ stage('OWASP Dependency Check') {
     // ---------------------------
     // TRIVY SCAN
     // ---------------------------
-    stage('Trivy Scan') {
-      steps {
-        container('trivy') {
-          sh '''
-            trivy image --format template \
-            --template "@/contrib/html.tpl" \
-            --output trivy-report.html \
-            --severity CRITICAL,HIGH \
-            --no-progress \
-            $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
-          '''
-        }
-      }
+stage('Trivy Scan') {
+  steps {
+    container('trivy') {
+      sh '''
+        echo "🔍 Running Trivy image scan..."
+
+        # HTML report for Jenkins artifacts
+        trivy image \
+          --format template \
+          --template "@/contrib/html.tpl" \
+          --output trivy-report.html \
+          --severity CRITICAL,HIGH \
+          --no-progress \
+          $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
+
+        # JSON report for DefectDojo
+        trivy image \
+          --format json \
+          --output trivy.json \
+          --no-progress \
+          $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
+      '''
     }
+  }
+}
 
     // ---------------------------
     // ZAP SCAN
     // ---------------------------
-    stage('OWASP ZAP DAST Scan') {
-      steps {
-        container('zap') {
-          sh '''
-	    mkdir -p /zap/wrk
-            zap-baseline.py \
-              -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-              -r zap.html || true
-          '''
-        }
-      }
+stage('OWASP ZAP DAST Scan') {
+  steps {
+    container('zap') {
+      sh '''
+        mkdir -p /zap/wrk
+
+        zap-baseline.py \
+          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+          -r zap.html \
+          -J zap.json || true
+
+        cp /zap/wrk/zap.html .
+        cp /zap/wrk/zap.json .
+      '''
     }
+  }
+}
 
     // =========================================================
     // =============== DEFECTDOJO UPLOAD STAGES ================
@@ -152,14 +168,18 @@ stage('OWASP Dependency Check') {
 
 stage('Upload Gitleaks to DefectDojo') {
   steps {
-    container('kaniko') {
+    container('curl') {
       withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
         sh '''
-          curl -X POST "$DD_URL/api/v2/import-scan/" \
+          echo "⬆ Uploading Gitleaks report..."
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DD_API_KEY" \
             -F "scan_type=Gitleaks Scan" \
             -F "engagement=1" \
-            -F "file=@gitleaks-report.json"
+            -F "file=@gitleaks-report.json" \
+            -F "active=true" \
+            -F "verified=false" || true
         '''
       }
     }
@@ -168,14 +188,18 @@ stage('Upload Gitleaks to DefectDojo') {
 
 stage('Upload Dependency-Check to DefectDojo') {
   steps {
-    container('kaniko') {
+    container('curl') {
       withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
         sh '''
-          curl -X POST "$DD_URL/api/v2/import-scan/" \
+          echo "⬆ Uploading Dependency-Check report..."
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DD_API_KEY" \
             -F "scan_type=Dependency Check Scan" \
             -F "engagement=1" \
-            -F "file=@dc-report/dependency-check-report.xml"
+            -F "file=@dc-report/dependency-check-report.xml" \
+            -F "active=true" \
+            -F "verified=false" || true
         '''
       }
     }
@@ -184,18 +208,18 @@ stage('Upload Dependency-Check to DefectDojo') {
 
 stage('Upload Trivy to DefectDojo') {
   steps {
-    container('trivy') {
-      sh 'trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true'
-    }
-
-    container('kaniko') {
+    container('curl') {
       withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
         sh '''
-          curl -X POST "$DD_URL/api/v2/import-scan/" \
+          echo "⬆ Uploading Trivy report..."
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DD_API_KEY" \
             -F "scan_type=Trivy Scan" \
             -F "engagement=1" \
-            -F "file=@trivy.json"
+            -F "file=@trivy.json" \
+            -F "active=true" \
+            -F "verified=false" || true
         '''
       }
     }
@@ -204,14 +228,18 @@ stage('Upload Trivy to DefectDojo') {
 
 stage('Upload ZAP to DefectDojo') {
   steps {
-    container('kaniko') {
+    container('curl') {
       withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
         sh '''
-          curl -X POST "$DD_URL/api/v2/import-scan/" \
+          echo "⬆ Uploading ZAP report..."
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DD_API_KEY" \
             -F "scan_type=ZAP Scan" \
             -F "engagement=1" \
-            -F "file=@zap.html"
+            -F "file=@zap.json" \
+            -F "active=true" \
+            -F "verified=false" || true
         '''
       }
     }
