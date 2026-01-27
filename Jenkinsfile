@@ -86,7 +86,8 @@ stage('OWASP Dependency Check') {
               --format HTML \
               --out dc-report \
               --disableAssembly \
-              --nvdApiKey $NVD_API_KEY || true
+              --data /odc-data \
+	      --nvdApiKey $NVD_API_KEY || true
           '''
         }
       }
