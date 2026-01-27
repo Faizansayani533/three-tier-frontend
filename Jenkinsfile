@@ -101,7 +101,7 @@ stage('OWASP Dependency Check') {
           /usr/share/dependency-check/bin/dependency-check.sh \
             --project "three-tier-frontend" \
             --scan . \
-            --format HTML,XML \
+            --format HTML \
             --out dc-report \
             --disableAssembly || true
         '''
@@ -220,7 +220,7 @@ stage('Upload Dependency-Check to DefectDojo') {
           -H "Authorization: Token $DD_API_KEY" \
           -F "scan_type=Dependency Check Scan" \
           -F "engagement=1" \
-          -F "file=@dc-report/dependency-check-report.xml" \
+          -F "file=@dc-report/dependency-check-report.html" \
           -F "active=true" \
           -F "verified=false"
       '''
