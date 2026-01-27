@@ -85,30 +85,57 @@ stage('GitLeaks Secret Scan') {
       }
     }
 
-// ---------------------------
-// OWASP DEPENDENCY CHECK (NON BLOCKING)
-// ---------------------------
-stage('OWASP Dependency Check') {
-  steps {
-    container('dependency-check') {
-      catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-        sh '''
-          echo "🔍 OWASP Dependency Check"
+    // ---------------------------
+    // PREPARE ODC DATABASE
+    // ---------------------------
+    stage('Prepare Dependency-Check DB') {
+      steps {
+        container('dependency-check') {
+          withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+            sh '''
+              echo "📥 Preparing Dependency-Check DB..."
 
-          rm -rf dc-report
-          mkdir dc-report
-
-          /usr/share/dependency-check/bin/dependency-check.sh \
-            --project "three-tier-frontend" \
-            --scan . \
-            --format HTML \
-            --out dc-report \
-            --disableAssembly || true
-        '''
+              if [ ! -d "/odc-data/nvdcve" ]; then
+                /usr/share/dependency-check/bin/dependency-check.sh \
+                  --updateonly \
+                  --data /odc-data \
+                  --nvdApiKey $NVD_API_KEY
+              else
+                echo "Using existing offline DB"
+              fi
+            '''
+          }
+        }
       }
     }
-  }
-}
+
+    // ---------------------------
+    // OWASP DEPENDENCY CHECK (NON BLOCKING)
+    // ---------------------------
+    stage('OWASP Dependency Check') {
+      steps {
+        container('dependency-check') {
+          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+            sh '''
+              echo "🔍 OWASP Dependency Check"
+
+              rm -rf dc-report
+              mkdir dc-report
+
+              /usr/share/dependency-check/bin/dependency-check.sh \
+                --project "three-tier-frontend" \
+                --scan . \
+                --format HTML \
+                --out dc-report \
+                --disableAssembly \
+                --data /odc-data \
+                --noupdate || true \
+                
+            '''
+          }
+        }
+      }
+    }
 
     // ---------------------------
     // BUILD & PUSH IMAGE
