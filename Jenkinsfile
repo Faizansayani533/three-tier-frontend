@@ -8,47 +8,35 @@ pipeline {
     IMAGE_TAG    = "${BUILD_NUMBER}"
     SONARQUBE    = "sonarqube"
     GITOPS_REPO  = "https://github.com/Faizansayani533/three-tier-gitops.git"
-    DD_URL = "http://a24c6130de3b44ebf8138d1d6af506ab-504923582.eu-north-1.elb.amazonaws.com"
+    DD_URL       = "http://a24c6130de3b44ebf8138d1d6af506ab-504923582.eu-north-1.elb.amazonaws.com"
   }
 
   stages {
 
     stage('Checkout Source') {
+      steps { checkout scm }
+    }
+
+    // ---------------------------
+    // GITLEAKS SECRET SCAN
+    // ---------------------------
+    stage('GitLeaks Secret Scan') {
       steps {
-        checkout scm
+        container('gitleaks') {
+          sh '''
+            gitleaks detect --source . --report-format json --report-path gitleaks-report.json --no-git || true
+          '''
+        }
       }
     }
-    // ---------------------------
-// GITLEAKS SECRET SCAN
-// ---------------------------
-stage('GitLeaks Secret Scan') {
-  steps {
-    container('gitleaks') {
-      sh '''
-        echo "🔐 Running GitLeaks secret scan..."
-
-        gitleaks detect \
-          --source . \
-          --report-format json \
-          --report-path gitleaks-report.json \
-          --no-git || true
-
-        echo "✅ GitLeaks scan completed"
-      '''
-    }
-  }
-}
-
 
     // ---------------------------
-    // INSTALL & BUILD REACT
+    // BUILD REACT
     // ---------------------------
     stage('Install & Build React') {
       steps {
         container('node') {
           sh '''
-            node -v
-            npm -v
             npm install
             npm run build
           '''
@@ -57,7 +45,7 @@ stage('GitLeaks Secret Scan') {
     }
 
     // ---------------------------
-    // SONARQUBE SCAN
+    // SONARQUBE
     // ---------------------------
     stage('SonarQube Scan') {
       steps {
@@ -74,9 +62,6 @@ stage('GitLeaks Secret Scan') {
       }
     }
 
-    // ---------------------------
-    // QUALITY GATE
-    // ---------------------------
     stage('Quality Gate') {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
@@ -86,51 +71,21 @@ stage('GitLeaks Secret Scan') {
     }
 
     // ---------------------------
-    // PREPARE ODC DATABASE
-    // ---------------------------
-    stage('Prepare Dependency-Check DB') {
-      steps {
-        container('dependency-check') {
-          withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-            sh '''
-              echo "📥 Preparing Dependency-Check DB..."
-
-              if [ ! -d "/odc-data/nvdcve" ]; then
-                /usr/share/dependency-check/bin/dependency-check.sh \
-                  --updateonly \
-                  --data /odc-data \
-                  --nvdApiKey $NVD_API_KEY
-              else
-                echo "Using existing offline DB"
-              fi
-            '''
-          }
-        }
-      }
-    }
-
-    // ---------------------------
-    // OWASP DEPENDENCY CHECK (NON BLOCKING)
+    // DEPENDENCY CHECK
     // ---------------------------
     stage('OWASP Dependency Check') {
       steps {
         container('dependency-check') {
           catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
             sh '''
-              echo "🔍 OWASP Dependency Check"
-
-              rm -rf dc-report
-              mkdir dc-report
+              rm -rf dc-report && mkdir dc-report
 
               /usr/share/dependency-check/bin/dependency-check.sh \
                 --project "three-tier-frontend" \
                 --scan . \
                 --format HTML \
                 --out dc-report \
-                --disableAssembly \
-                --data /odc-data \
-                --noupdate || true \
-                
+                --disableAssembly || true
             '''
           }
         }
@@ -144,167 +99,131 @@ stage('GitLeaks Secret Scan') {
       steps {
         container('kaniko') {
           sh '''
-            echo "🐳 Building image with Kaniko..."
-
             /kaniko/executor \
               --context /home/jenkins/agent/workspace/three-tier-frontend \
               --dockerfile /home/jenkins/agent/workspace/three-tier-frontend/Dockerfile \
               --destination $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
-              --destination $ECR_REGISTRY/$IMAGE_NAME:latest \
-              --verbosity=info
+              --destination $ECR_REGISTRY/$IMAGE_NAME:latest
           '''
         }
       }
     }
 
     // ---------------------------
-    // TRIVY IMAGE SCAN (NON BLOCKING)
+    // TRIVY SCAN
     // ---------------------------
-stage('Trivy Scan') {
-  steps {
-    container('trivy') {
-      sh '''
-        echo "🔍 Running Trivy image scan..."
-
-        trivy image \
-          --format template \
-	  --template "@/contrib/html.tpl" \
-          --output trivy-report.html \
-          --severity CRITICAL,HIGH \
-          --no-progress \
-          $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
-      '''
-    }
-  }
-}
-
-    // ---------------------------
-    // UPDATE GITOPS REPO
-    // ---------------------------
-    stage('Update GitOps Repo') {
+    stage('Trivy Scan') {
       steps {
-        withCredentials([string(credentialsId: 'gitops-token', variable: 'GIT_TOKEN')]) {
+        container('trivy') {
           sh '''
-            rm -rf gitops
-            git clone https://$GIT_TOKEN@github.com/Faizansayani533/three-tier-gitops.git gitops
-
-            cd gitops/frontend
-            sed -i "s|image: .*|image: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g" deployment.yaml
-
-            git config user.email "jenkins@devsecops.com"
-            git config user.name "jenkins"
-
-            git add deployment.yaml
-            git commit -m "Update frontend image to $IMAGE_TAG"
-            git push origin main
+            trivy image --format template \
+            --template "@/contrib/html.tpl" \
+            --output trivy-report.html \
+            --severity CRITICAL,HIGH \
+            --no-progress \
+            $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
           '''
         }
       }
     }
 
     // ---------------------------
-    // OWASP ZAP DAST SCAN (NON BLOCKING)
+    // ZAP SCAN
     // ---------------------------
-stage('OWASP ZAP DAST Scan') {
-  steps {
-    container('zap') {
-      sh '''
-        echo "🚨 Running OWASP ZAP scan..."
-
-        mkdir -p /zap/wrk
-
-        zap-baseline.py \
-          -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
-          -r zap.html || true
-
-        cp /zap/wrk/zap.html .
-      '''
+    stage('OWASP ZAP DAST Scan') {
+      steps {
+        container('zap') {
+          sh '''
+            zap-baseline.py \
+              -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
+              -r zap.html || true
+          '''
+        }
+      }
     }
-  }
-}
 
-stage('Upload Gitleaks to DefectDojo') {
-  steps {
-    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-      sh '''
-        curl -X POST "$DD_URL/api/v2/import-scan/" \
-          -H "Authorization: Token $DD_API_KEY" \
-          -F "scan_type=Gitleaks Scan" \
-          -F "engagement=1" \
-          -F "file=@gitleaks-report.json" \
-          -F "active=true" \
-          -F "verified=false"
-      '''
+    // =========================================================
+    // =============== DEFECTDOJO UPLOAD STAGES ================
+    // =========================================================
+
+    stage('Upload Gitleaks to DefectDojo') {
+      steps {
+        container('gitleaks') {
+          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+            sh '''
+              curl -X POST "$DD_URL/api/v2/import-scan/" \
+              -H "Authorization: Token $DD_API_KEY" \
+              -F "scan_type=Gitleaks Scan" \
+              -F "engagement=1" \
+              -F "file=@gitleaks-report.json"
+            '''
+          }
+        }
+      }
     }
-  }
-}
 
-stage('Upload Dependency-Check to DefectDojo') {
-  steps {
-    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-      sh '''
-        curl -X POST "$DD_URL/api/v2/import-scan/" \
-          -H "Authorization: Token $DD_API_KEY" \
-          -F "scan_type=Dependency Check Scan" \
-          -F "engagement=1" \
-          -F "file=@dc-report/dependency-check-report.html" \
-          -F "active=true" \
-          -F "verified=false"
-      '''
+    stage('Upload Dependency-Check to DefectDojo') {
+      steps {
+        container('dependency-check') {
+          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+            sh '''
+              curl -X POST "$DD_URL/api/v2/import-scan/" \
+              -H "Authorization: Token $DD_API_KEY" \
+              -F "scan_type=Dependency Check Scan" \
+              -F "engagement=1" \
+              -F "file=@dc-report/dependency-check-report.html"
+            '''
+          }
+        }
+      }
     }
-  }
-}
 
-stage('Upload Trivy to DefectDojo') {
-  steps {
-    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-      sh '''
-        trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
+    stage('Upload Trivy to DefectDojo') {
+      steps {
+        container('trivy') {
+          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+            sh '''
+              trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
 
-        curl -X POST "$DD_URL/api/v2/import-scan/" \
-          -H "Authorization: Token $DD_API_KEY" \
-          -F "scan_type=Trivy Scan" \
-          -F "engagement=1" \
-          -F "file=@trivy.json" \
-          -F "active=true" \
-          -F "verified=false"
-      '''
+              curl -X POST "$DD_URL/api/v2/import-scan/" \
+              -H "Authorization: Token $DD_API_KEY" \
+              -F "scan_type=Trivy Scan" \
+              -F "engagement=1" \
+              -F "file=@trivy.json"
+            '''
+          }
+        }
+      }
     }
-  }
-}
 
-stage('Upload ZAP to DefectDojo') {
-  steps {
-    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-      sh '''
-        curl -X POST "$DD_URL/api/v2/import-scan/" \
-          -H "Authorization: Token $DD_API_KEY" \
-          -F "scan_type=ZAP Scan" \
-          -F "engagement=1" \
-          -F "file=@zap.html" \
-          -F "active=true" \
-          -F "verified=false"
-      '''
+    stage('Upload ZAP to DefectDojo') {
+      steps {
+        container('zap') {
+          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+            sh '''
+              curl -X POST "$DD_URL/api/v2/import-scan/" \
+              -H "Authorization: Token $DD_API_KEY" \
+              -F "scan_type=ZAP Scan" \
+              -F "engagement=1" \
+              -F "file=@zap.html"
+            '''
+          }
+        }
+      }
     }
-  }
-}
-
-
   }
 
   post {
-
     always {
-	echo "📦 Archiving security reports..."
-    archiveArtifacts artifacts: 'zap.html, trivy-report.html, dc-report/**,gitleaks-report.*', fingerprint: true
+      archiveArtifacts artifacts: 'zap.html, trivy-report.html, dc-report/**, gitleaks-report.*', fingerprint: true
     }
 
     success {
-      echo "✅ FRONTEND PIPELINE PASSED — Argo CD will deploy UI"
+      echo "✅ DEVSECOPS PIPELINE SUCCESS — Reports pushed to DefectDojo"
     }
 
     failure {
-      echo "❌ FRONTEND PIPELINE COMPLETED WITH SECURITY FAILURES"
+      echo "❌ PIPELINE FAILED — Check stage logs"
     }
   }
 }
