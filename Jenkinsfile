@@ -179,85 +179,47 @@ stage('Test curl container') {
     // =============== DEFECTDOJO UPLOAD STAGES ================
     // =========================================================
 
-stage('Upload Gitleaks to DefectDojo') {
-  steps {
-    container('curl') {
-      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-        sh '''
-          echo "⬆ Uploading Gitleaks report..."
+ stage('Upload Reports to DefectDojo') {
+      steps {
+        container('node') {
+          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+            sh '''
+              apt-get update -y
+              apt-get install -y curl
 
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Gitleaks Scan" \
-            -F "engagement=1" \
-            -F "file=@gitleaks-report.json" \
-            -F "active=true" \
-            -F "verified=false" || true
-        '''
+              echo "⬆ Uploading Gitleaks..."
+              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+                -H "Authorization: Token $DD_API_KEY" \
+                -F "scan_type=Gitleaks Scan" \
+                -F "engagement=1" \
+                -F "file=@gitleaks-report.json" || true
+
+              echo "⬆ Uploading Dependency-Check..."
+              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+                -H "Authorization: Token $DD_API_KEY" \
+                -F "scan_type=Dependency Check Scan" \
+                -F "engagement=1" \
+                -F "file=@dc-report/dependency-check-report.xml" || true
+
+              echo "⬆ Uploading Trivy..."
+              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+                -H "Authorization: Token $DD_API_KEY" \
+                -F "scan_type=Trivy Scan" \
+                -F "engagement=1" \
+                -F "file=@trivy.json" || true
+
+              echo "⬆ Uploading ZAP..."
+              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+                -H "Authorization: Token $DD_API_KEY" \
+                -F "scan_type=ZAP Scan" \
+                -F "engagement=1" \
+                -F "file=@zap.json" || true
+            '''
+          }
+        }
       }
     }
   }
-}
-
-stage('Upload Dependency-Check to DefectDojo') {
-  steps {
-    container('curl') {
-      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-        sh '''
-          echo "⬆ Uploading Dependency-Check report..."
-
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Dependency Check Scan" \
-            -F "engagement=1" \
-            -F "file=@dc-report/dependency-check-report.xml" \
-            -F "active=true" \
-            -F "verified=false" || true
-        '''
-      }
-    }
-  }
-}
-
-stage('Upload Trivy to DefectDojo') {
-  steps {
-    container('curl') {
-      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-        sh '''
-          echo "⬆ Uploading Trivy report..."
-
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Trivy Scan" \
-            -F "engagement=1" \
-            -F "file=@trivy.json" \
-            -F "active=true" \
-            -F "verified=false" || true
-        '''
-      }
-    }
-  }
-}
-
-stage('Upload ZAP to DefectDojo') {
-  steps {
-    container('curl') {
-      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-        sh '''
-          echo "⬆ Uploading ZAP report..."
-
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=ZAP Scan" \
-            -F "engagement=1" \
-            -F "file=@zap.json" \
-            -F "active=true" \
-            -F "verified=false" || true
-        '''
-      }
-    }
-  }
-}
 
   }
 
