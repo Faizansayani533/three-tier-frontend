@@ -162,6 +162,19 @@ stage('OWASP ZAP DAST Scan') {
   }
 }
 
+stage('Test curl container') {
+  steps {
+    container('curl') {
+      sh '''
+        which curl
+        curl --version
+        echo "curl container OK"
+      '''
+    }
+  }
+}
+
+
     // =========================================================
     // =============== DEFECTDOJO UPLOAD STAGES ================
     // =========================================================
