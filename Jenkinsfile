@@ -136,6 +136,7 @@ stage('OWASP Dependency Check') {
       steps {
         container('zap') {
           sh '''
+	    mkdir -p /zap/wrk
             zap-baseline.py \
               -t http://a998a5c39b13c427ebf3a09def396192-1140351167.eu-north-1.elb.amazonaws.com \
               -r zap.html || true
@@ -148,71 +149,74 @@ stage('OWASP Dependency Check') {
     // =============== DEFECTDOJO UPLOAD STAGES ================
     // =========================================================
 
-    stage('Upload Gitleaks to DefectDojo') {
-      steps {
-        container('gitleaks') {
-          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-            sh '''
-              curl -X POST "$DD_URL/api/v2/import-scan/" \
-              -H "Authorization: Token $DD_API_KEY" \
-              -F "scan_type=Gitleaks Scan" \
-              -F "engagement=1" \
-              -F "file=@gitleaks-report.json"
-            '''
-          }
-        }
+stage('Upload Gitleaks to DefectDojo') {
+  steps {
+    container('kaniko') {
+      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+        sh '''
+          curl -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Gitleaks Scan" \
+            -F "engagement=1" \
+            -F "file=@gitleaks-report.json"
+        '''
       }
     }
+  }
+}
 
-    stage('Upload Dependency-Check to DefectDojo') {
-      steps {
-        container('dependency-check') {
-          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-            sh '''
-              curl -X POST "$DD_URL/api/v2/import-scan/" \
-              -H "Authorization: Token $DD_API_KEY" \
-              -F "scan_type=Dependency Check Scan" \
-              -F "engagement=1" \
-              -F "file=@dc-report/dependency-check-report.html"
-            '''
-          }
-        }
+stage('Upload Dependency-Check to DefectDojo') {
+  steps {
+    container('kaniko') {
+      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+        sh '''
+          curl -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Dependency Check Scan" \
+            -F "engagement=1" \
+            -F "file=@dc-report/dependency-check-report.xml"
+        '''
       }
     }
+  }
+}
 
-    stage('Upload Trivy to DefectDojo') {
-      steps {
-        container('trivy') {
-          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-            sh '''
-              trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
-
-              curl -X POST "$DD_URL/api/v2/import-scan/" \
-              -H "Authorization: Token $DD_API_KEY" \
-              -F "scan_type=Trivy Scan" \
-              -F "engagement=1" \
-              -F "file=@trivy.json"
-            '''
-          }
-        }
-      }
+stage('Upload Trivy to DefectDojo') {
+  steps {
+    container('trivy') {
+      sh 'trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true'
     }
 
-    stage('Upload ZAP to DefectDojo') {
-      steps {
-        container('zap') {
-          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-            sh '''
-              curl -X POST "$DD_URL/api/v2/import-scan/" \
-              -H "Authorization: Token $DD_API_KEY" \
-              -F "scan_type=ZAP Scan" \
-              -F "engagement=1" \
-              -F "file=@zap.html"
-            '''
-          }
-        }
+    container('kaniko') {
+      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+        sh '''
+          curl -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Trivy Scan" \
+            -F "engagement=1" \
+            -F "file=@trivy.json"
+        '''
       }
     }
+  }
+}
+
+stage('Upload ZAP to DefectDojo') {
+  steps {
+    container('kaniko') {
+      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+        sh '''
+          curl -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=ZAP Scan" \
+            -F "engagement=1" \
+            -F "file=@zap.html"
+        '''
+      }
+    }
+  }
+}
+
   }
 
   post {
