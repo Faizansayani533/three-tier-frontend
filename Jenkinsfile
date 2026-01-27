@@ -70,27 +70,29 @@ pipeline {
       }
     }
 
-    // ---------------------------
-    // DEPENDENCY CHECK
-    // ---------------------------
-    stage('OWASP Dependency Check') {
-      steps {
-        container('dependency-check') {
-          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-            sh '''
-              rm -rf dc-report && mkdir dc-report
+stage('OWASP Dependency Check') {
+  steps {
+    container('dependency-check') {
+      withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+          sh '''
+            echo "🔍 OWASP Dependency Check (with NVD API key)"
 
-              /usr/share/dependency-check/bin/dependency-check.sh \
-                --project "three-tier-frontend" \
-                --scan . \
-                --format HTML \
-                --out dc-report \
-                --disableAssembly || true
-            '''
-          }
+            rm -rf dc-report && mkdir dc-report
+
+            /usr/share/dependency-check/bin/dependency-check.sh \
+              --project "three-tier-frontend" \
+              --scan . \
+              --format HTML,XML \
+              --out dc-report \
+              --disableAssembly \
+              --nvdApiKey $NVD_API_KEY || true
+          '''
         }
       }
     }
+  }
+}
 
     // ---------------------------
     // BUILD & PUSH IMAGE
