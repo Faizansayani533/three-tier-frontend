@@ -8,6 +8,7 @@ pipeline {
     IMAGE_TAG    = "${BUILD_NUMBER}"
     SONARQUBE    = "sonarqube"
     GITOPS_REPO  = "https://github.com/Faizansayani533/three-tier-gitops.git"
+    DD_URL = "http://a24c6130de3b44ebf8138d1d6af506ab-504923582.eu-north-1.elb.amazonaws.com"
   }
 
   stages {
@@ -221,6 +222,73 @@ stage('OWASP ZAP DAST Scan') {
     }
   }
 }
+
+stage('Upload Gitleaks to DefectDojo') {
+  steps {
+    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+      sh '''
+        curl -X POST "$DD_URL/api/v2/import-scan/" \
+          -H "Authorization: Token $DD_API_KEY" \
+          -F "scan_type=Gitleaks Scan" \
+          -F "engagement=1" \
+          -F "file=@gitleaks-report.json" \
+          -F "active=true" \
+          -F "verified=false"
+      '''
+    }
+  }
+}
+
+stage('Upload Dependency-Check to DefectDojo') {
+  steps {
+    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+      sh '''
+        curl -X POST "$DD_URL/api/v2/import-scan/" \
+          -H "Authorization: Token $DD_API_KEY" \
+          -F "scan_type=Dependency Check Scan" \
+          -F "engagement=1" \
+          -F "file=@dc-report/dependency-check-report.xml" \
+          -F "active=true" \
+          -F "verified=false"
+      '''
+    }
+  }
+}
+
+stage('Upload Trivy to DefectDojo') {
+  steps {
+    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+      sh '''
+        trivy image --format json -o trivy.json $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || true
+
+        curl -X POST "$DD_URL/api/v2/import-scan/" \
+          -H "Authorization: Token $DD_API_KEY" \
+          -F "scan_type=Trivy Scan" \
+          -F "engagement=1" \
+          -F "file=@trivy.json" \
+          -F "active=true" \
+          -F "verified=false"
+      '''
+    }
+  }
+}
+
+stage('Upload ZAP to DefectDojo') {
+  steps {
+    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+      sh '''
+        curl -X POST "$DD_URL/api/v2/import-scan/" \
+          -H "Authorization: Token $DD_API_KEY" \
+          -F "scan_type=ZAP Scan" \
+          -F "engagement=1" \
+          -F "file=@zap.html" \
+          -F "active=true" \
+          -F "verified=false"
+      '''
+    }
+  }
+}
+
 
   }
 
