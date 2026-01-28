@@ -8,7 +8,7 @@ pipeline {
     IMAGE_TAG    = "${BUILD_NUMBER}"
     SONARQUBE    = "sonarqube"
     GITOPS_REPO  = "https://github.com/Faizansayani533/three-tier-gitops.git"
-    DD_URL       = "http://a24c6130de3b44ebf8138d1d6af506ab-504923582.eu-north-1.elb.amazonaws.com"
+    DD_URL 	 = "http://a24c6130de3b44ebf8138d1d6af506ab-504923582.eu-north-1.elb.amazonaws.com"
   }
 
   stages {
@@ -168,46 +168,65 @@ stage('OWASP ZAP DAST Scan') {
     // =============== DEFECTDOJO UPLOAD STAGES ================
     // =========================================================
 
- stage('Upload Reports to DefectDojo') {
-      steps {
-        container('node') {
-          withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
-            sh '''
-	      apk update
-              apk add --no-cache curl
+stage('Upload Reports to S3 & Import to DefectDojo') {
+  steps {
+    container('node') {
+      withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+        sh '''
+          set -e
 
-              echo "⬆ Uploading Gitleaks..."
-              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-                -H "Authorization: Token $DD_API_KEY" \
-                -F "scan_type=Gitleaks Scan" \
-                -F "engagement=1" \
-                -F "file=@gitleaks-report.json" || true
+          apk add --no-cache aws-cli curl
 
-              echo "⬆ Uploading Dependency-Check..."
-              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-                -H "Authorization: Token $DD_API_KEY" \
-                -F "scan_type=Dependency Check Scan" \
-                -F "engagement=1" \
-                -F "file=@dc-report/dependency-check-report.xml" || true
+          BUCKET=devsecops-defectdojo-reports
+          BASE_PATH=three-tier/$BUILD_NUMBER
 
-              echo "⬆ Uploading Trivy..."
-              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-                -H "Authorization: Token $DD_API_KEY" \
-                -F "scan_type=Trivy Scan" \
-                -F "engagement=1" \
-                -F "file=@trivy.json" || true
+          echo "⬆ Uploading reports to S3..."
 
-              echo "⬆ Uploading ZAP..."
-              curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-                -H "Authorization: Token $DD_API_KEY" \
-                -F "scan_type=ZAP Scan" \
-                -F "engagement=1" \
-                -F "file=@zap.json" || true
-            '''
-          }
-        }
+          aws s3 cp gitleaks-report.json s3://$BUCKET/$BASE_PATH/gitleaks.json
+          aws s3 cp dc-report/dependency-check-report.xml s3://$BUCKET/$BASE_PATH/dc.xml
+          aws s3 cp trivy.json s3://$BUCKET/$BASE_PATH/trivy.json
+          aws s3 cp zap.json s3://$BUCKET/$BASE_PATH/zap.json
+
+          echo "🔗 Generating pre-signed URLs..."
+
+          GITLEAKS_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/gitleaks.json --expires-in 3600)
+          DC_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/dc.xml --expires-in 3600)
+          TRIVY_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/trivy.json --expires-in 3600)
+          ZAP_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/zap.json --expires-in 3600)
+
+          echo "🚀 Sending reports to DefectDojo via URLs..."
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Gitleaks Scan" \
+            -F "engagement=1" \
+            -F "file_url=$GITLEAKS_URL"
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Dependency Check Scan" \
+            -F "engagement=1" \
+            -F "file_url=$DC_URL"
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=Trivy Scan" \
+            -F "engagement=1" \
+            -F "file_url=$TRIVY_URL"
+
+          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -F "scan_type=ZAP Scan" \
+            -F "engagement=1" \
+            -F "file_url=$ZAP_URL"
+
+          echo "✅ All reports uploaded to DefectDojo successfully"
+        '''
       }
     }
+  }
+}
+
   }
 
 
