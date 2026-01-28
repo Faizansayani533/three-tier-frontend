@@ -168,13 +168,11 @@ stage('OWASP ZAP DAST Scan') {
     // =============== DEFECTDOJO UPLOAD STAGES ================
     // =========================================================
 
-stage('Upload Reports to S3 & Import to DefectDojo') {
+stage('Upload Reports via Proxy to DefectDojo') {
   steps {
     container('node') {
       withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
         sh '''
-          set -e
-
           apk add --no-cache aws-cli curl
 
           BUCKET=devsecops-defectdojo-reports
@@ -187,40 +185,32 @@ stage('Upload Reports to S3 & Import to DefectDojo') {
           aws s3 cp trivy.json s3://$BUCKET/$BASE_PATH/trivy.json
           aws s3 cp zap.json s3://$BUCKET/$BASE_PATH/zap.json
 
-          echo "🔗 Generating pre-signed URLs..."
+          echo "🔗 Generating presigned URLs..."
 
           GITLEAKS_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/gitleaks.json --expires-in 3600)
           DC_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/dc.xml --expires-in 3600)
           TRIVY_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/trivy.json --expires-in 3600)
           ZAP_URL=$(aws s3 presign s3://$BUCKET/$BASE_PATH/zap.json --expires-in 3600)
 
-          echo "🚀 Sending reports to DefectDojo via URLs..."
+          echo "🚀 Sending jobs to proxy..."
 
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Gitleaks Scan" \
-            -F "engagement=1" \
-            -F "file_url=$GITLEAKS_URL"
+          curl -X POST http://defectdojo-proxy.defectdojo.svc.cluster.local:5000/import \
+            -H "Content-Type: application/json" \
+            -d "{\"scan_type\":\"Gitleaks Scan\",\"engagement\":\"1\",\"file_url\":\"$GITLEAKS_URL\"}"
 
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Dependency Check Scan" \
-            -F "engagement=1" \
-            -F "file_url=$DC_URL"
+          curl -X POST http://defectdojo-proxy.defectdojo.svc.cluster.local:5000/import \
+            -H "Content-Type: application/json" \
+            -d "{\"scan_type\":\"Dependency Check Scan\",\"engagement\":\"1\",\"file_url\":\"$DC_URL\"}"
 
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=Trivy Scan" \
-            -F "engagement=1" \
-            -F "file_url=$TRIVY_URL"
+          curl -X POST http://defectdojo-proxy.defectdojo.svc.cluster.local:5000/import \
+            -H "Content-Type: application/json" \
+            -d "{\"scan_type\":\"Trivy Scan\",\"engagement\":\"1\",\"file_url\":\"$TRIVY_URL\"}"
 
-          curl -s -X POST "$DD_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DD_API_KEY" \
-            -F "scan_type=ZAP Scan" \
-            -F "engagement=1" \
-            -F "file_url=$ZAP_URL"
+          curl -X POST http://defectdojo-proxy.defectdojo.svc.cluster.local:5000/import \
+            -H "Content-Type: application/json" \
+            -d "{\"scan_type\":\"ZAP Scan\",\"engagement\":\"1\",\"file_url\":\"$ZAP_URL\"}"
 
-          echo "✅ All reports uploaded to DefectDojo successfully"
+          echo "✅ Proxy jobs submitted"
         '''
       }
     }
