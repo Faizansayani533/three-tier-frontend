@@ -173,8 +173,8 @@ stage('OWASP ZAP DAST Scan') {
         container('node') {
           withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
             sh '''
-              apt-get update -y
-              apt-get install -y curl
+	      apk update
+              apk add --no-cache curl
 
               echo "⬆ Uploading Gitleaks..."
               curl -s -X POST "$DD_URL/api/v2/import-scan/" \
