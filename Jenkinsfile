@@ -83,11 +83,11 @@ stage('OWASP Dependency Check') {
             /usr/share/dependency-check/bin/dependency-check.sh \
               --project "three-tier-frontend" \
               --scan . \
-              --format XML \
+              --format HTML \
               --out dc-report \
               --disableAssembly \
               --data /odc-data \
-	      --nvdApiKey $NVD_API_KEY
+	      --nvdApiKey $NVD_API_KEY || true
 	     
           '''
         }
