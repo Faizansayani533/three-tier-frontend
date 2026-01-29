@@ -88,6 +88,7 @@ stage('OWASP Dependency Check') {
               --disableAssembly \
               --data /odc-data \
 	      --nvdApiKey $NVD_API_KEY || true
+	      --failOnCVSS 9
           '''
         }
       }
